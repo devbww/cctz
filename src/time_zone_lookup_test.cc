@@ -1030,44 +1030,48 @@ std::unique_ptr<ZoneInfoSource> ExtendedTestFactory(
     const std::string& name,
     const std::function<std::unique_ptr<ZoneInfoSource>(const std::string&)>&
         fallback) {
-  if (name == "test:extended_dst") {
-    // 1900-01-01T00:00:00Z (-2208988800) is before epoch, but extending
-    // 401 years reaches 2301 AD in the positive unix time space.
+  if (name == "test:ExtendedBeforeEpoch") {
+    // -1 (1969-12-31T23:59:59Z) is the latest final transition before the
+    // epoch, so the zone is rejected despite the future specification.
     return std::unique_ptr<ZoneInfoSource>(new StringZoneInfoSource(
-        MakeExtendedTzif(-2208988800LL, -5 * 3600, "EST",
-                         "EST5EDT,M3.2.0,M11.1.0")));
+        MakeExtendedTzif(-1, -5 * 3600, "EST", "EST5EDT,M3.2.0,M11.1.0")));
   }
-  if (name == "test:extended_dst_too_far") {
-    // Year -1201 (-100000000000) is so far before epoch that extending
-    // 401 years still leaves the last transition in the negative unix time space.
+  if (name == "test:ExtendedFarFuture") {
+    // 0 (1970-01-01T00:00:00Z) is the earliest final transition an extended
+    // zone may have, which maximizes the 400-year shift that BreakTime()
+    // needs for a lookup at the maximum time.
     return std::unique_ptr<ZoneInfoSource>(new StringZoneInfoSource(
-        MakeExtendedTzif(-100000000000LL, -5 * 3600, "EST",
-                         "EST5EDT,M3.2.0,M11.1.0")));
+        MakeExtendedTzif(0, -5 * 3600, "EST", "EST5EDT,M3.2.0,M11.1.0")));
   }
   return fallback(name);
 }
 
-// Tests loading a TZif file whose explicit transitions end before epoch
-// with a POSIX DST footer string.
+// Tests that a TZif file whose explicit transitions end before epoch
+// is rejected when it has a POSIX DST footer string.
 TEST(TimeZoneEdgeCase, ExtendedBeforeEpoch) {
   auto prev_factory = cctz_extension::zone_info_source_factory;
   cctz_extension::zone_info_source_factory = ExtendedTestFactory;
 
+  // Extended zones must end with a non-negative explicit transition.
   time_zone tz;
-  ASSERT_TRUE(load_time_zone("test:extended_dst", &tz));
+  EXPECT_FALSE(load_time_zone("test:ExtendedBeforeEpoch", &tz));
 
-  // July matches the future rule for EDT (UTC-4).
-  auto tp_july = convert(civil_second(2026, 7, 20, 12, 0, 0), tz);
-  ExpectTime(tp_july, tz, 2026, 7, 20, 12, 0, 0, -4 * 3600, true, "EDT");
-  EXPECT_STREQ("EDT", tz.lookup(tp_july).abbr);
+  cctz_extension::zone_info_source_factory = prev_factory;
+}
 
-  // January matches the future rule for EST (UTC-5).
-  auto tp_jan = convert(civil_second(2026, 1, 20, 12, 0, 0), tz);
-  ExpectTime(tp_jan, tz, 2026, 1, 20, 12, 0, 0, -5 * 3600, false, "EST");
-  EXPECT_STREQ("EST", tz.lookup(tp_jan).abbr);
+// Looking up the maximum time in an extended zone must fold back through the
+// 400-year cycle without overflowing when BreakTime() computes the shift.
+TEST(TimeZoneEdgeCase, ExtendedFarFuture) {
+  auto prev_factory = cctz_extension::zone_info_source_factory;
+  cctz_extension::zone_info_source_factory = ExtendedTestFactory;
 
-  // Extended zones that do not reach non-negative unix time are rejected.
-  EXPECT_FALSE(load_time_zone("test:extended_dst_too_far", &tz));
+  time_zone tz;
+  ASSERT_TRUE(load_time_zone("test:ExtendedFarFuture", &tz));
+
+  auto tp_max = time_point<cctz::seconds>::max();
+  ExpectTime(tp_max, tz, 292277026596, 12, 4, 10, 30, 7, -5 * 3600, false,
+             "EST");
+  EXPECT_STREQ("EST", tz.lookup(tp_max).abbr);
 
   cctz_extension::zone_info_source_factory = prev_factory;
 }

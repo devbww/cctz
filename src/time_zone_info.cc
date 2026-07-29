@@ -342,6 +342,14 @@ bool TimeZoneInfo::ExtendTransitions() {
     return EquivTransitions(transitions_.back().type_index, dst_ti);
   }
 
+  // We require that zoneinfo data with a rule for future transitions
+  // ends with a non-negative transition.  This removes the need to add
+  // any "second-half" transition to ensure differences between adjacent
+  // transitions are always representable, while also guaranteeing that
+  // the arithmetic used to shift between 400-year cycles never overflows.
+  // All valid zones easily meet this requirement.
+  if (transitions_.back().unix_time < 0) return false;
+
   // Extend the transitions for an additional 401 years using the future
   // specification. Years beyond those can be handled by mapping back to
   // a cycle-equivalent year within that range. Note that we need 401
@@ -850,7 +858,7 @@ bool TimeZoneInfo::Load(ZoneInfoSource* zip) {
   // previous transition is always representable, without overflow.
   const Transition& last(transitions_.back());
   if (last.unix_time < 0) {
-    if (extended_) return false;
+    assert(!extended_);
     const std::uint_fast8_t type_index = last.type_index;
     Transition& tr(*transitions_.emplace(transitions_.end()));
     tr.unix_time = 2147483647;  // 2038-01-19T03:14:07+00:00
