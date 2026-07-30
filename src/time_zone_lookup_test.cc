@@ -186,6 +186,13 @@ TEST(TimeZone, Failures) {
   EXPECT_FALSE(load_time_zone("file:/../etc/passwd", &tz));
   EXPECT_FALSE(load_time_zone("file:America/../America/Los_Angeles", &tz));
 
+  // Reject a fixed-offset name with a NUL where a digit belongs.
+  for (const int i : {10, 11, 13, 14, 16, 17}) {
+    std::string name = "Fixed/UTC+00:00:00";
+    name[static_cast<std::size_t>(i)] = '\0';
+    EXPECT_FALSE(load_time_zone(name, &tz)) << "NUL at offset " << i;
+  }
+
   // Reject non-regular files and directories.
   EXPECT_FALSE(load_time_zone("file:/dev/null", &tz));
   EXPECT_FALSE(load_time_zone("file:/dev/stdin", &tz));
