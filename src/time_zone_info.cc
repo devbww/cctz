@@ -799,7 +799,13 @@ bool TimeZoneInfo::Load(ZoneInfoSource* zip) {
       default_transition_type_ = static_cast<std::uint_fast8_t>(index);
   }
 
-  // Copy all the abbreviations.
+  // Copy all the abbreviations. The area holds NUL-terminated strings, and
+  // LocalTime() hands out a pointer into it, so the final abbreviation has
+  // to be terminated within the area itself. Otherwise an abbreviation runs
+  // on into whatever ExtendTransitions() later appends. (hdr.charcnt != 0
+  // because every abbr_index was validated to be less than it.)
+  if (bp[hdr.charcnt - 1] != '\0')
+    return false;
   abbreviations_.reserve(hdr.charcnt + 10);
   abbreviations_.assign(bp, hdr.charcnt);
   bp += hdr.charcnt;
