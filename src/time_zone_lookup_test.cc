@@ -1054,6 +1054,14 @@ std::unique_ptr<ZoneInfoSource> ExtendedTestFactory(
         MakeExtendedTzif(0, -5 * 3600, std::string{"EST", 4},
                          "EST5EDT,M3.2.0,M11.1.0")));
   }
+  if (name == "test:ExtendedOverlappingRules") {
+    // The daylight time of one year starts more than four days after its
+    // nominal date, while the next year's ends more than five days before
+    // its own, so the two years' generated transitions overlap.
+    return std::unique_ptr<ZoneInfoSource>(new StringZoneInfoSource(
+        MakeExtendedTzif(0, -5 * 3600, std::string{"STD", 4},
+                         "STD-12:00:00DST12:00:00,358/100:00:00,1/-139:00:00")));
+  }
   if (name == "test:UnterminatedAbbreviation") {
     // The abbreviation area is missing its final NUL, so the abbreviation
     // would run into whatever ExtendTransitions() appends behind it.
@@ -1084,6 +1092,20 @@ TEST(TimeZoneEdgeCase, ExtendedBeforeEpoch) {
   // Extended zones must end with a non-negative explicit transition.
   time_zone tz;
   EXPECT_FALSE(load_time_zone("test:ExtendedBeforeEpoch", &tz));
+
+  cctz_extension::zone_info_source_factory = prev_factory;
+}
+
+// A transition time may include a day offset of up to +/-167 hours, so the
+// rules for consecutive years can overlap, producing transitions that go
+// backward in unix time. BreakTime() binary searches the transitions by
+// unix time, so such a zone must be rejected.
+TEST(TimeZoneEdgeCase, ExtendedOverlappingRules) {
+  auto prev_factory = cctz_extension::zone_info_source_factory;
+  cctz_extension::zone_info_source_factory = ExtendedTestFactory;
+
+  time_zone tz;
+  EXPECT_FALSE(load_time_zone("test:ExtendedOverlappingRules", &tz));
 
   cctz_extension::zone_info_source_factory = prev_factory;
 }

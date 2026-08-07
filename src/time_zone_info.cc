@@ -756,11 +756,6 @@ bool TimeZoneInfo::Load(ZoneInfoSource* zip) {
     if (transitions_[i].unix_time < -(1LL << 59) ||
         transitions_[i].unix_time > (1LL << 59))
       return false;  // out of range
-    if (i != 0) {
-      // Check that the transitions are ordered by time (as zic guarantees).
-      if (!Transition::ByUnixTime()(transitions_[i - 1], transitions_[i]))
-        return false;  // out of order
-    }
   }
   bool seen_type_0 = false;
   for (std::size_t i = 0; i != hdr.timecnt; ++i) {
@@ -883,11 +878,13 @@ bool TimeZoneInfo::Load(ZoneInfoSource* zip) {
     ttp = &transition_types_[tr.type_index];
     tr.civil_sec = LocalTime(tr.unix_time, *ttp).cs;
     if (i != 0) {
-      // Check that the transitions are ordered by civil time. Essentially
-      // this means that an offset change cannot cross another such change.
-      // No one does this in practice, and we depend on it in MakeTime().
-      if (!Transition::ByCivilTime()(transitions_[i - 1], tr))
+      // Check that offset changes don't cross each other. No one
+      // does this in practice, and we depend on increasing absolute
+      // and civil times in BreakTime() and MakeTime() respectively.
+      if (!Transition::ByUnixTime()(transitions_[i - 1], tr) ||
+          !Transition::ByCivilTime()(transitions_[i - 1], tr)) {
         return false;  // out of order
+      }
     }
   }
 
