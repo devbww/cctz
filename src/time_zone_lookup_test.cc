@@ -180,12 +180,6 @@ TEST(TimeZone, Failures) {
   EXPECT_EQ(chrono::system_clock::from_time_t(0),
             convert(civil_second(1970, 1, 1, 0, 0, 0), tz));  // UTC
 
-  // Reject path-traversal components.
-  EXPECT_FALSE(load_time_zone("file:../etc/passwd", &tz));
-  EXPECT_FALSE(load_time_zone("file:../../etc/passwd", &tz));
-  EXPECT_FALSE(load_time_zone("file:/../etc/passwd", &tz));
-  EXPECT_FALSE(load_time_zone("file:America/../America/Los_Angeles", &tz));
-
   // Reject a fixed-offset name with a NUL where a digit belongs.
   for (const int i : {10, 11, 13, 14, 16, 17}) {
     std::string name = "Fixed/UTC+00:00:00";
@@ -193,10 +187,28 @@ TEST(TimeZone, Failures) {
     EXPECT_FALSE(load_time_zone(name, &tz)) << "NUL at offset " << i;
   }
 
-  // Reject non-regular files and directories.
+  // Reject path-traversal components.
+  EXPECT_FALSE(load_time_zone("file:../etc/passwd", &tz));
+  EXPECT_FALSE(load_time_zone("file:../../etc/passwd", &tz));
+  EXPECT_FALSE(load_time_zone("file:/../etc/passwd", &tz));
+  EXPECT_FALSE(load_time_zone("file:America/../America/Los_Angeles", &tz));
+
+#if defined(_WIN32)
+  // Windows accepts '\' as a path separator, so these escape as well.
+  // If they were admitted, the second would resolve back into the zoneinfo
+  // directory and load, failing the test. Elsewhere '\' is an ordinary
+  // filename character, so these would only fail as nonexistent names.
+  EXPECT_FALSE(load_time_zone("file:..\\etc\\passwd", &tz));
+  EXPECT_FALSE(load_time_zone("file:America\\..\\America/Los_Angeles", &tz));
+#endif
+
+#if !defined(_MSC_VER)
+  // Reject non-regular files and directories. The check lives in the
+  // non-MSVC FOpen(), so only expect it there.
   EXPECT_FALSE(load_time_zone("file:/dev/null", &tz));
   EXPECT_FALSE(load_time_zone("file:/dev/stdin", &tz));
   EXPECT_FALSE(load_time_zone("file:/tmp", &tz));
+#endif
 }
 
 TEST(TimeZone, Equality) {

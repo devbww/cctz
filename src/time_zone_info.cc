@@ -421,18 +421,25 @@ inline FilePtr FOpen(const char* path) {
 #endif
 }
 
+// Returns true if c separates path components. Windows accepts either
+// form, so a "..\" component walks up a directory just like a "../" one.
+inline bool IsPathSeparator(char c) {
+#if defined(_WIN32)
+  return c == '/' || c == '\\';
+#else
+  return c == '/';
+#endif
+}
+
 // Returns true if the zone name starting at pos contains an unsafe path.
-inline bool UnsafePath(const std::string& name, std::size_t pos) {
-  // Path traversal: exact match ".."
-  if (name.compare(pos, std::string::npos, "..") == 0) return true;
-  // Path traversal: leading component "../"
-  if (name.compare(pos, 3, "../") == 0) return true;
-  // Path traversal: interior component "/../"
-  if (name.find("/../", pos) != std::string::npos) return true;
-  // Path traversal: trailing component "/.."
-  if (name.size() - pos >= 3 &&
-      name.compare(name.size() - 3, 3, "/..") == 0) {
-    return true;
+bool UnsafePath(const std::string& name, std::size_t pos) {
+  // Path traversal: a ".." component that is at the beginning or preceded
+  // by a separator, and at the end or followed by a separator.
+  for (auto i = pos; (i = name.find("..", i)) != std::string::npos; i += 2) {
+    if ((i == pos || IsPathSeparator(name[i - 1])) &&
+        (i == name.size() - 2 || IsPathSeparator(name[i + 2]))) {
+      return true;
+    }
   }
   return false;
 }
